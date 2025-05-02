@@ -20,19 +20,19 @@ Dieses Projekt enthält ein PowerShell-Skript, das den automatisierten Download,
    git clone https://github.com/Fingerkrampf/Pi_Network_WIndows_Node_Setup_Helper.git
 
 2. Navigiere in das Verzeichnis des geklonten Projekts:
+    ```bash
    cd Pi_Network_WIndows_Node_Setup_Helper
    
-3. Starte das Skript über die Batch-Datei:
+4. Starte das Skript über die Batch-Datei:
+    ```bash
    .\start.bat
 
 Lizenz
 
 Dieses Projekt steht unter der GNU General Public License v3.0 – siehe die Datei LICENSE für Details.
 Hinweis
-
     Du musst möglicherweise Anpassungen im Skript vornehmen, um sicherzustellen, dass deine spezifischen Anforderungen und der vServer korrekt eingerichtet sind.
-
     Es wird empfohlen, dass du das Skript zunächst in einer Testumgebung ausprobierst, um sicherzustellen, dass alles wie erwartet funktioniert.
 
    ## Kontakt
-Bei Fragen oder Anmerkungen kannst du uns über unsere Telegram-Gruppe erreichen: [Pi Netzwerk Deutschland](https://t.me/pinetzwerkdeutschland).
+Bei Fragen oder Anmerkungen kannst du uns/mich (Fingerkrampf) über unsere Telegram-Gruppe erreichen: [Pi Netzwerk Deutschland](https://t.me/pinetzwerkdeutschland).
