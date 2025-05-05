@@ -142,7 +142,7 @@ function Do-EnableWSL2 {
         pause
         return
     }
-
+}
 
 function Do-InstallWireGuard {
     Write-Host "Installiere WireGuard mit winget..." -ForegroundColor Cyan
