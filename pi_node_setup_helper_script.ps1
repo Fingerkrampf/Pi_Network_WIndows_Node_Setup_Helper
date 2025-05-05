@@ -15,7 +15,7 @@
 <#
 --------------------------------------------------------------------------------
 Pi Network Windows Node Setup Helper – von Fingerkrampf / PiNetzwerkDeutschland.de
-VER 2025-05-02  (komplett automatisiertes Installationsskript für den Betrieb eines Pi Network Windows Nodes + IPv6 Lösung in Verbindung mit einem vServer, PS-5-kompatibel)
+VER 2025-05-06  (komplett automatisiertes Installationsskript für den Betrieb eines Pi Network Windows Nodes + IPv6 Lösung in Verbindung mit einem gemieteten vServer, PS-5-kompatibel)
 HINWEIS: Die Nutzung und Ausführung des Skripts erfolgt auf eigene Verantwortung und Gefahr.
 Das Skript dient lediglich der Vereinfachung des Einrichtungsprozesses.
 Für den Inhalt, die Sicherheit oder Funktionsweise der installierten Programme wird keine Haftung übernommen.
@@ -48,6 +48,13 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 # === Pfad-Funktionen ===
+
+function Is-WSL2Enabled {
+    $wsl = Get-WindowsOptionalFeature -Online -FeatureName Microsoft-Windows-Subsystem-Linux
+    $vm  = Get-WindowsOptionalFeature -Online -FeatureName VirtualMachinePlatform
+    return ($wsl.State -eq "Enabled" -and $vm.State -eq "Enabled")
+}
+
 function Get-WGDir {
     foreach ($path in 'C:\Program Files\WireGuard', 'C:\Program Files (x86)\WireGuard') {
         if (Test-Path (Join-Path $path 'wg.exe')) { return $path }
@@ -64,6 +71,21 @@ function Get-PuTTYDir {
     return $null
 }
 
+function Are-NodeFirewallRulesPresent {
+    $requiredPorts = 31400..31409
+    $rules = Get-NetFirewallRule | Where-Object { $_.DisplayName -like 'PiNode_TCP_In_*' -or $_.DisplayName -like 'PiNode_TCP_Out_*' }
+
+    $existingPorts = @()  # leeres Array initialisieren
+    foreach ($rule in $rules) {
+        if ($rule.DisplayName -match '_(\d+)$') {
+            $existingPorts += [int]$matches[1]
+        }
+    }
+
+    return ($requiredPorts | Where-Object { $existingPorts -contains $_ }).Count -eq $requiredPorts.Count
+}
+
+
 function Refresh-InstallationStatus {
     $global:DockerInstalled     = (Get-Command docker -ErrorAction SilentlyContinue) -ne $null
     $global:PiNodeInstalled = @(
@@ -71,6 +93,9 @@ function Refresh-InstallationStatus {
 ) | Where-Object { Test-Path $_ } | Select-Object -First 1
     $global:PuTTYInstalled      = Get-PuTTYDir
     $global:WireGuardInstalled  = Get-WGDir
+$global:WSL2Enabled = Is-WSL2Enabled
+$global:WGKeysPresent = Check-WGKeysExist
+$global:FirewallPortsOpen = Are-NodeFirewallRulesPresent
 }
 
 # === Installationsfunktionen ===
@@ -115,7 +140,7 @@ function Do-EnableWSL2 {
     $autostartScriptPath = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup\ResumeWSL2Setup.ps1"
 
     if (Test-Path $flagPath) {
-        Write-Host "`nFortsetzungs-Flag erkannt – Setup wird fortgesetzt..." -ForegroundColor Cyan
+        Write-Host "`n Fortsetzungs-Flag erkannt – Setup wird fortgesetzt..." -ForegroundColor Cyan
 
         try {
             wsl --set-default-version 2
@@ -131,8 +156,7 @@ function Do-EnableWSL2 {
         return
     }
 
-    
-    Write-Host "`nPrüfe WSL2-Status..." -ForegroundColor Cyan
+    Write-Host "`n Prüfe WSL2-Status..." -ForegroundColor Cyan
 
     $wslEnabled = (Get-WindowsOptionalFeature -Online -FeatureName Microsoft-Windows-Subsystem-Linux).State -eq "Enabled"
     $vmEnabled  = (Get-WindowsOptionalFeature -Online -FeatureName VirtualMachinePlatform).State -eq "Enabled"
@@ -142,7 +166,20 @@ function Do-EnableWSL2 {
         pause
         return
     }
+
+    Write-Host "`nAktiviere benötigte Windows-Features für WSL2..." -ForegroundColor Yellow
+    Enable-WindowsOptionalFeature -Online -FeatureName Microsoft-Windows-Subsystem-Linux -NoRestart -All
+    Enable-WindowsOptionalFeature -Online -FeatureName VirtualMachinePlatform -All
+
+    Set-Content -Path $flagPath -Value "resume"
+
+    Copy-Item $scriptPath $autostartScriptPath -Force
+
+    Write-Host "`nSystem wird neu gestartet – Setup wird beim nächsten Login automatisch fortgesetzt." -ForegroundColor Yellow
+    pause
+    Restart-Computer -Force
 }
+
 
 function Do-InstallWireGuard {
     Write-Host "Installiere WireGuard mit winget..." -ForegroundColor Cyan
@@ -172,6 +209,7 @@ function Do-InstallWireGuard {
 
     Pause
 }
+
 function Do-FirewallPorts {
     Write-Host 'Setze Firewall-Regeln für Ports 31400-31409 …' -ForegroundColor Cyan
     foreach ($p in 31400..31409) {
@@ -306,44 +344,68 @@ function Remove-AllHostKeysForIP($serverIp) {
     }
 }
 
-function Ensure-HostKeyAccepted($serverIp, $user = "root", $password) {
+function Ensure-HostKeyAccepted {
+    param (
+        [string]$serverIp,
+        [string]$user = "root",
+        [string]$password = $null,
+        [string]$privateKeyPath = $null
+    )
+
     $pu = Get-PuTTYDir
     if (-not $pu) { Write-Warning "PuTTY nicht gefunden."; return }
     Remove-AllHostKeysForIP -serverIp $serverIp
     $plink = Join-Path $pu 'plink.exe'
     Write-Host "Akzeptiere SSH-Hostkey von $serverIp automatisch..." -ForegroundColor Yellow
-    
-    # Erstellen einer temporären Antwortdatei für die automatische Bestätigung
+
+    # Temporäre Antwortdatei für Hostkey-Bestätigung
     $responseFile = [System.IO.Path]::GetTempFileName()
     "y`n" | Out-File -FilePath $responseFile -Encoding ASCII
-    
-    # Plink mit der Antwortdatei ausführen
-    $process = Start-Process -FilePath $plink -ArgumentList "-pw", $password, "$user@${serverIp}", "exit" -Wait -NoNewWindow -RedirectStandardInput $responseFile -PassThru
-    
-    # Temporäre Datei bereinigen
+
+    # Argumente je nach Methode zusammenstellen
+    $args = @()
+    if ($password) {
+        $args += "-pw", $password
+    } elseif ($privateKeyPath) {
+        $args += "-i", "`"$privateKeyPath`""
+    }
+
+    $args += "$user@$serverIp", "exit"
+
+    # plink starten
+    $process = Start-Process -FilePath $plink -ArgumentList $args -Wait -NoNewWindow -RedirectStandardInput $responseFile -PassThru
     Remove-Item $responseFile -Force
-    
-    # Überprüfen des Exit-Codes
+
     if ($process.ExitCode -ne 0) {
         Write-Warning "Fehler beim Akzeptieren des Hostkeys für $serverIp (Exit-Code: $($process.ExitCode))"
     }
 }
 
-# Hilfsfunktion um PuTTY-Verzeichnis zu finden
-function Get-PuTTYDir {
-    $paths = @(
-        "${env:ProgramFiles}\PuTTY",
-        "${env:ProgramFiles(x86)}\PuTTY",
-        "$env:LOCALAPPDATA\Programs\PuTTY"
+function Convert-OpenSSHKeyToPPK {
+    param (
+        [string]$opensshKeyPath,
+        [string]$puttygenPath,
+        [string]$ppkOutPath
     )
-    
-    foreach ($path in $paths) {
-        if (Test-Path $path) {
-            return $path
-        }
+
+    if (-not (Test-Path $puttygenPath)) {
+        Write-Error "puttygen.exe nicht gefunden. Bitte sicherstellen, dass PuTTY installiert ist."
+        return $null
     }
-    return $null
+
+    Write-Host "Konvertiere OpenSSH-Key nach PuTTY-Format (.ppk)..." -ForegroundColor Cyan
+    & $puttygenPath "`"$opensshKeyPath`"" -o "`"$ppkOutPath`"" | Out-Null
+
+    if (Test-Path $ppkOutPath) {
+        Write-Host "Konvertierung erfolgreich: $ppkOutPath" -ForegroundColor Green
+        return $ppkOutPath
+    } else {
+        Write-Error "Konvertierung fehlgeschlagen."
+        return $null
+    }
 }
+
+
 # === WireGuard-Keys generieren ===
 function Gen-WGKeys($dir) {
     $keyDir = Join-Path $dir 'keys'
@@ -363,10 +425,47 @@ function Do-SetupWGServer {
     if (-not $wg) { Write-Warning 'WireGuard nicht installiert.'; return }
 
     $serverIp = Read-Host 'IPv4 Adresse des vServers'
+
+$authChoice = Read-Host 'Authentifizierungsmethode? (pw für Passwort / key für SSH-Key)'
+if ($authChoice -eq 'pw') {
     $cred = Read-Host 'Root-Passwort' -AsSecureString
     $pwd = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($cred))
-
     Ensure-HostKeyAccepted -serverIp $serverIp -user "root" -password $pwd
+}
+elseif ($authChoice -eq 'key') {
+    if ($PSCommandPath) {
+    $scriptDir = Split-Path -Parent $PSCommandPath
+} else {
+    $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
+}
+
+    $opensshKey = Join-Path $scriptDir 'id_ed25519'
+    $ppkKey     = [System.IO.Path]::ChangeExtension($opensshKey, ".ppk")
+    $ppkWasTemporary = $false
+
+    if (-not (Test-Path $ppkKey)) {
+        if (-not (Test-Path $opensshKey)) {
+            Write-Error "SSH-Key '$opensshKey' nicht gefunden. Bitte im Skriptverzeichnis ablegen."
+            return
+        }
+
+        $puttygen = Join-Path (Get-PuTTYDir) 'puttygen.exe'
+        $convertedKey = Convert-OpenSSHKeyToPPK -opensshKeyPath $opensshKey -puttygenPath $puttygen -ppkOutPath $ppkKey
+        if (-not $convertedKey) { return }
+        $ppkWasTemporary = $true
+    }
+
+    Ensure-HostKeyAccepted -serverIp $serverIp -user "root" -privateKeyPath $ppkKey
+
+    if ($ppkWasTemporary) {
+        Cleanup-TemporaryFiles -ppkPath $ppkKey
+    }
+}
+else {
+    Write-Error "Ungültige Auswahl. Bitte 'pw' oder 'key' eingeben."
+    return
+}
+
 
     $wgExe = Join-Path $wg 'wg.exe'
     $keyDir = Join-Path $wg 'keys'
@@ -481,27 +580,80 @@ PersistentKeepalive = 25
 function Show-Menu {
     Clear-Host
     Refresh-InstallationStatus
-    $dockerText = if ($DockerInstalled) { '3) Docker Desktop (installiert)' } else { '3) Docker Desktop installieren' }
-    $piNodeText = if ($PiNodeInstalled) { '4) Pi Network Node (installiert)' } else { '4) Pi Network Node installieren' }
-    $puttyText  = if ($PuTTYInstalled)  { '6) PuTTY (installiert)' } else { '6) PuTTY installieren' }
-    $wgText     = if ($WireGuardInstalled) { '7) WireGuard (installiert)' } else { '7) WireGuard installieren' }
 
-    Write-Host '===[ Pi Network Windows Node Setup Helper Script ]===' -ForegroundColor GREEN
-    Write-Host ' '
-    Write-Host '1) Windows-Updates'
-    Write-Host '2) WSL2 einrichten'
-    Write-Host $dockerText
-    Write-Host $piNodeText
-    Write-Host '5) Windows Firewall - Node Ports freigeben'
-    Write-Host $puttyText
-    Write-Host $wgText
-    Write-Host '8) WireGuard-Server einrichten und Client verbinden'
-    Write-Host '9) PiCheck herunterladen, entpacken und starten'
-    Write-Host '10) Hilfe / Info'
-    Write-Host '11) Beenden'
-    Write-Host ' '
-  
+    Write-Host '===[ Pi Network Windows Node Setup Helper Script ]===' -ForegroundColor Green
+    Write-Host ''
+
+    # === Gruppe 1–5: Basis-Setup ===
+    Write-Host '1) Windows-Updates' -ForegroundColor Cyan
+
+    if ($WSL2Enabled) {
+        Write-Host "2) WSL2 (" -ForegroundColor Cyan -NoNewline
+        Write-Host "aktiviert" -ForegroundColor Green -NoNewline
+        Write-Host ")" -ForegroundColor Cyan
+    } else {
+        Write-Host "2) WSL2 einrichten" -ForegroundColor Cyan
+    }
+
+    if ($DockerInstalled) {
+        Write-Host "3) Docker Desktop (" -ForegroundColor Cyan -NoNewline
+        Write-Host "installiert" -ForegroundColor Green -NoNewline
+        Write-Host ")" -ForegroundColor Cyan
+    } else {
+        Write-Host "3) Docker Desktop installieren" -ForegroundColor Cyan
+    }
+
+    if ($PiNodeInstalled) {
+        Write-Host "4) Pi Network Node (" -ForegroundColor Cyan -NoNewline
+        Write-Host "installiert" -ForegroundColor Green -NoNewline
+        Write-Host ")" -ForegroundColor Cyan
+    } else {
+        Write-Host "4) Pi Network Node installieren" -ForegroundColor Cyan
+    }
+
+    if ($FirewallPortsOpen) {
+        Write-Host "5) Firewall-Ports (" -ForegroundColor Cyan -NoNewline
+        Write-Host "freigegeben" -ForegroundColor Green -NoNewline
+        Write-Host ")" -ForegroundColor Cyan
+    } else {
+        Write-Host "5) Firewall-Ports freigeben" -ForegroundColor Cyan
+    }
+
+    # === Gruppe 6–8: Netzwerk-Tools ===
+    if ($PuTTYInstalled) {
+        Write-Host "6) PuTTY (" -ForegroundColor Yellow -NoNewline
+        Write-Host "installiert" -ForegroundColor Green -NoNewline
+        Write-Host ")" -ForegroundColor Yellow
+    } else {
+        Write-Host "6) PuTTY installieren" -ForegroundColor Yellow
+    }
+
+    if ($WireGuardInstalled) {
+        if ($WGKeysPresent) {
+            Write-Host "7) WireGuard (" -ForegroundColor Yellow -NoNewline
+            Write-Host "installiert, Schlüssel vorhanden" -ForegroundColor Green -NoNewline
+            Write-Host ")" -ForegroundColor Yellow
+        } else {
+            Write-Host "7) WireGuard (" -ForegroundColor Yellow -NoNewline
+            Write-Host "installiert, keine Schlüssel" -ForegroundColor Green -NoNewline
+            Write-Host ")" -ForegroundColor Yellow
+        }
+    } else {
+        Write-Host "7) WireGuard Windows Client installieren" -ForegroundColor Yellow
+    }
+
+    Write-Host '8) Automastisch WireGuard Server einrichten & Client verbinden' -ForegroundColor Yellow
+
+    # === Gruppe 9: Analyse-Tool ===
+    Write-Host '9) PiCheck herunterladen, entpacken und starten' -ForegroundColor White
+
+    # === Gruppe 10–11: Info & Exit ===
+    Write-Host '10) Hilfe / Info' -ForegroundColor DarkGreen
+    Write-Host '11) Beenden' -ForegroundColor DarkGreen
+
+    Write-Host ''
 }
+
 
 # --- Hauptschleife ---
 while ($true) {
@@ -539,3 +691,19 @@ Write-Host ' '
         default { Write-Warning 'Ungültige Auswahl'; Pause }
     }
 }
+
+function Cleanup-TemporaryFiles {
+    param (
+        [string]$ppkPath = $null
+    )
+
+    try {
+        if ($ppkPath -and (Test-Path $ppkPath)) {
+            Write-Host "Bereinige temporäre Datei: $ppkPath" -ForegroundColor DarkGray
+            Remove-Item $ppkPath -Force -ErrorAction SilentlyContinue
+        }
+    } catch {
+        Write-Warning "Fehler beim Bereinigen temporärer Dateien: $_"
+    }
+}
+
