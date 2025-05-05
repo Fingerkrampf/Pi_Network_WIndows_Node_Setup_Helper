@@ -11,7 +11,7 @@ Dieses Projekt enthält ein PowerShell-Skript, das den automatisierten Download,
 ## Voraussetzungen
 - Windows 10/11 oder Windows Server (mit PowerShell 5.x)
 - Administratorrechte auf dem Computer
-- Ein vServer, der über eine eigene IPv4 Adresse verfügt.
+- Ein vServer, der über eine eigene IPv4 Adresse und Root Rechte verfügt.
 
 ## Installation und Nutzung
 
