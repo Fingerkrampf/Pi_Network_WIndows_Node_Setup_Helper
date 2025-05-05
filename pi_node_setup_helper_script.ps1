@@ -1,34 +1,34 @@
 <#
-  Dieses Skript ist freie Software: Sie können es unter den Bedingungen
-  der GNU General Public License, wie von der Free Software Foundation veröffentlicht,
-  weiterverbreiten und/oder modifizieren, entweder gemäß Version 3 der Lizenz oder
-  (nach Ihrer Wahl) jeder späteren Version.
+  Dieses Skript ist freie Software: Sie kÃ¶nnen es unter den Bedingungen
+  der GNU General Public License, wie von der Free Software Foundation verÃ¶ffentlicht,
+  weiterverbreiten und/oder modifizieren, entweder gemÃ¤ÃŸ Version 3 der Lizenz oder
+  (nach Ihrer Wahl) jeder spÃ¤teren Version.
 
-  Dieses Skript wird in der Hoffnung verteilt, dass es nützlich sein wird,
-  aber OHNE JEDE GEWÄHRLEISTUNG – sogar ohne die implizite Gewährleistung
-  der MARKTFÄHIGKEIT oder EIGNUNG FÜR EINEN BESTIMMTEN ZWECK.
+  Dieses Skript wird in der Hoffnung verteilt, dass es nÃ¼tzlich sein wird,
+  aber OHNE JEDE GEWÃ„HRLEISTUNG â€“ sogar ohne die implizite GewÃ¤hrleistung
+  der MARKTFÃ„HIGKEIT oder EIGNUNG FÃœR EINEN BESTIMMTEN ZWECK.
 
-  Siehe die GNU General Public License für weitere Details.
+  Siehe die GNU General Public License fÃ¼r weitere Details.
   <https://www.gnu.org/licenses/>.
 #>
 
 <#
 --------------------------------------------------------------------------------
-Pi Network Windows Node Setup Helper – von Fingerkrampf / PiNetzwerkDeutschland.de
-VER 2025-05-02  (komplett automatisiertes Installationsskript für den Betrieb eines Pi Network Windows Nodes + IPv6 Lösung in Verbindung mit einem vServer, PS-5-kompatibel)
-HINWEIS: Die Nutzung und Ausführung des Skripts erfolgt auf eigene Verantwortung und Gefahr.
+Pi Network Windows Node Setup Helper â€“ von Fingerkrampf / PiNetzwerkDeutschland.de
+VER 2025-05-02  (komplett automatisiertes Installationsskript fÃ¼r den Betrieb eines Pi Network Windows Nodes + IPv6 LÃ¶sung in Verbindung mit einem vServer, PS-5-kompatibel)
+HINWEIS: Die Nutzung und AusfÃ¼hrung des Skripts erfolgt auf eigene Verantwortung und Gefahr.
 Das Skript dient lediglich der Vereinfachung des Einrichtungsprozesses.
-Für den Inhalt, die Sicherheit oder Funktionsweise der installierten Programme wird keine Haftung übernommen.
-Alle Downloads erfolgen ausschließlich von offiziellen Quellen!
+FÃ¼r den Inhalt, die Sicherheit oder Funktionsweise der installierten Programme wird keine Haftung Ã¼bernommen.
+Alle Downloads erfolgen ausschlieÃŸlich von offiziellen Quellen!
 --------------------------------------------------------------------------------
- Menüpunkte:
+ MenÃ¼punkte:
    1) Windows-Updates suchen
    2) WSL2 einrichten & aktivieren
    3) Docker Desktop downloaden & installieren (winget)
    4) Pi Network Node downloaden & installieren (Direkt-Download)
    5) Windows Firewall-Ports 31400-31409 freigeben
    6) PuTTY downloaden & installieren (winget)
-   7) WireGuard Client downloaden & installieren (winget) & Schlüssel generieren
+   7) WireGuard Client downloaden & installieren (winget) & SchlÃ¼ssel generieren
    8) WireGuard Server verbinden & einrichten & Client automatisch verbinden
    9) PiCheck downloaden & entpacken & starten
   10) Hilfe / Info
@@ -76,7 +76,7 @@ function Refresh-InstallationStatus {
 # === Installationsfunktionen ===
 
 function Do-WindowsUpdates {
-    Write-Host 'Suche nach Windows Updates …' -ForegroundColor Cyan
+    Write-Host 'Suche nach Windows Updates â€¦' -ForegroundColor Cyan
     $updateSession = New-Object -ComObject Microsoft.Update.Session
     $updateSearcher = $updateSession.CreateUpdateSearcher()
     $searchResult = $updateSearcher.Search("IsInstalled=0 and Type='Software'")
@@ -99,7 +99,7 @@ function Do-WindowsUpdates {
     $downloader.Updates = $updatesToDownload
     $downloader.Download()
 
-    Write-Host 'Updates heruntergeladen. Installation startet …' -ForegroundColor Cyan
+    Write-Host 'Updates heruntergeladen. Installation startet â€¦' -ForegroundColor Cyan
 
     $installer = $updateSession.CreateUpdateInstaller()
     $installer.Updates = $updatesToDownload
@@ -110,58 +110,46 @@ function Do-WindowsUpdates {
 }
 
 function Do-EnableWSL2 {
-    $flagPath = "C:\Windows\Temp\wsl_setup_flag.txt"
-    $taskName = "ResumeWSL2Setup"
+    $flagPath = "$env:ProgramData\wsl2_setup_flag.txt"
+    $scriptPath = $MyInvocation.MyCommand.Definition
+    $autostartScriptPath = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup\ResumeWSL2Setup.ps1"
 
     if (Test-Path $flagPath) {
-        Remove-Item $flagPath -Force
-        Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
+        Write-Host "`nFortsetzungs-Flag erkannt â€“ Setup wird fortgesetzt..." -ForegroundColor Cyan
 
-        Write-Host "WSL2 Setup nach Neustart fortgesetzt." -ForegroundColor Green
-        wsl --set-default-version 2
+        try {
+            wsl --set-default-version 2
+            Write-Host "`nWSL2 wurde als Standardversion gesetzt." -ForegroundColor Green
+        } catch {
+            Write-Warning "Fehler beim Setzen der Standardversion: $_"
+        }
+
+        # AufrÃ¤umen
+        Remove-Item $flagPath -Force -ErrorAction SilentlyContinue
+        Remove-Item $autostartScriptPath -Force -ErrorAction SilentlyContinue
         pause
         return
     }
+
+    
+    Write-Host "`nPrÃ¼fe WSL2-Status..." -ForegroundColor Cyan
 
     $wslEnabled = (Get-WindowsOptionalFeature -Online -FeatureName Microsoft-Windows-Subsystem-Linux).State -eq "Enabled"
     $vmEnabled  = (Get-WindowsOptionalFeature -Online -FeatureName VirtualMachinePlatform).State -eq "Enabled"
 
     if ($wslEnabled -and $vmEnabled) {
-        Write-Host "WSL2 und VirtualMachinePlatform sind bereits aktiviert." -ForegroundColor Green
+        Write-Host "WSL2 ist bereits vollstÃ¤ndig aktiviert." -ForegroundColor Green
         pause
         return
     }
 
-    Write-Host 'Aktiviere Windows-Features für WSL2 …' -ForegroundColor Cyan
-    Enable-WindowsOptionalFeature -Online -FeatureName Microsoft-Windows-Subsystem-Linux -NoRestart -All
-    Enable-WindowsOptionalFeature -Online -FeatureName VirtualMachinePlatform -All
-
-    New-Item -ItemType File -Path $flagPath -Force | Out-Null
-
-    $taskAction = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`""
-    $taskTrigger = New-ScheduledTaskTrigger -AtStartup
-    $taskSettings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -RunOnlyIfNetworkAvailable:$false
-    $taskPrincipal = New-ScheduledTaskPrincipal -UserId "NT AUTHORITY\SYSTEM" -LogonType ServiceAccount -RunLevel Highest
-
-    try {
-        Register-ScheduledTask -TaskName $taskName -Action $taskAction -Trigger $taskTrigger -Settings $taskSettings -Principal $taskPrincipal -Description "Fortsetzung WSL2 Setup" -Force
-    } catch {
-        Write-Warning "Konnte geplanten Task nicht erstellen: $_"
-        pause
-        return
-    }
-
-    Write-Host 'Neustart erforderlich – Rechner wird jetzt neu gestartet …' -ForegroundColor Yellow
-    pause
-    Restart-Computer -Force
-}
 
 function Do-InstallWireGuard {
     Write-Host "Installiere WireGuard mit winget..." -ForegroundColor Cyan
 
     try {
         if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
-        throw "Winget ist nicht verfügbar. Bitte stellen Sie sicher, dass es installiert ist."
+        throw "Winget ist nicht verfÃ¼gbar. Bitte stellen Sie sicher, dass es installiert ist."
         }
 
         Write-Host "Starte Silent-Installation von WireGuard..."
@@ -179,13 +167,13 @@ function Do-InstallWireGuard {
     }
     catch {
         Write-Host "FEHLER: $_" -ForegroundColor Red
-        Write-Host "Tipp: Stellen Sie sicher, dass winget verfügbar und aktuell ist." -ForegroundColor Yellow
+        Write-Host "Tipp: Stellen Sie sicher, dass winget verfÃ¼gbar und aktuell ist." -ForegroundColor Yellow
     }
 
     Pause
 }
 function Do-FirewallPorts {
-    Write-Host 'Setze Firewall-Regeln für Ports 31400-31409 …' -ForegroundColor Cyan
+    Write-Host 'Setze Firewall-Regeln fÃ¼r Ports 31400-31409 â€¦' -ForegroundColor Cyan
     foreach ($p in 31400..31409) {
         New-NetFirewallRule -DisplayName "PiNode_TCP_In_$p"  -Direction Inbound  -Protocol TCP -LocalPort $p -Action Allow -Profile Any | Out-Null
         New-NetFirewallRule -DisplayName "PiNode_TCP_Out_$p" -Direction Outbound -Protocol TCP -LocalPort $p -Action Allow -Profile Any | Out-Null
@@ -204,9 +192,9 @@ function Do-InstallDocker {
     Write-Host "Installiere Docker Desktop.." -ForegroundColor Cyan
 
     try {
-        # Überprüfen, ob winget verfügbar ist
+        # ÃœberprÃ¼fen, ob winget verfÃ¼gbar ist
         if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
-            throw "Winget ist nicht verfügbar. Bitte stellen Sie sicher, dass es installiert ist."
+            throw "Winget ist nicht verfÃ¼gbar. Bitte stellen Sie sicher, dass es installiert ist."
         }
 
         Write-Host "Starte Silent-Installation von Docker Desktop..."
@@ -218,7 +206,7 @@ function Do-InstallDocker {
     }
     catch {
         Write-Host "FEHLER: $_" -ForegroundColor Red
-        Write-Host "Tipp: Stellen Sie sicher, dass winget verfügbar und aktuell ist." -ForegroundColor Yellow
+        Write-Host "Tipp: Stellen Sie sicher, dass winget verfÃ¼gbar und aktuell ist." -ForegroundColor Yellow
     }
 
     Pause
@@ -270,7 +258,7 @@ function DownloadAndStartPiCheck {
     }
 
     if (-not $versionZips) {
-        Write-Warning "Keine gültigen PiCheck-Versionen gefunden."
+        Write-Warning "Keine gÃ¼ltigen PiCheck-Versionen gefunden."
         return
     }
 
@@ -308,7 +296,7 @@ function Check-WGKeysExist {
     return (Test-Path (Join-Path $keyDir 'wg_private.key')) -and (Test-Path (Join-Path $keyDir 'wg_public.key'))
 }
 
-# === SSH Hostkey löschen und automatisch annehmen ===
+# === SSH Hostkey lÃ¶schen und automatisch annehmen ===
 function Remove-AllHostKeysForIP($serverIp) {
     $hostKeyPath = "HKCU:\Software\SimonTatham\PuTTY\SshHostKeys"
     $prefixes = @('rsa2', 'dsa', 'ecdsa', 'ed25519', 'ssh-ed25519')
@@ -325,19 +313,19 @@ function Ensure-HostKeyAccepted($serverIp, $user = "root", $password) {
     $plink = Join-Path $pu 'plink.exe'
     Write-Host "Akzeptiere SSH-Hostkey von $serverIp automatisch..." -ForegroundColor Yellow
     
-    # Erstellen einer temporären Antwortdatei für die automatische Bestätigung
+    # Erstellen einer temporÃ¤ren Antwortdatei fÃ¼r die automatische BestÃ¤tigung
     $responseFile = [System.IO.Path]::GetTempFileName()
     "y`n" | Out-File -FilePath $responseFile -Encoding ASCII
     
-    # Plink mit der Antwortdatei ausführen
+    # Plink mit der Antwortdatei ausfÃ¼hren
     $process = Start-Process -FilePath $plink -ArgumentList "-pw", $password, "$user@${serverIp}", "exit" -Wait -NoNewWindow -RedirectStandardInput $responseFile -PassThru
     
-    # Temporäre Datei bereinigen
+    # TemporÃ¤re Datei bereinigen
     Remove-Item $responseFile -Force
     
-    # Überprüfen des Exit-Codes
+    # ÃœberprÃ¼fen des Exit-Codes
     if ($process.ExitCode -ne 0) {
-        Write-Warning "Fehler beim Akzeptieren des Hostkeys für $serverIp (Exit-Code: $($process.ExitCode))"
+        Write-Warning "Fehler beim Akzeptieren des Hostkeys fÃ¼r $serverIp (Exit-Code: $($process.ExitCode))"
     }
 }
 
@@ -394,7 +382,7 @@ function Do-SetupWGServer {
     $clientPriv | Out-File $clientPrivPath -Encoding ASCII
     $clientPub  | Out-File $clientPubPath  -Encoding ASCII
 
-    # Erstellen des Bash-Skripts für den Server
+    # Erstellen des Bash-Skripts fÃ¼r den Server
     $bash = @'
 #!/bin/bash
 set -euo pipefail
@@ -484,12 +472,12 @@ PersistentKeepalive = 25
     & "$env:ProgramFiles\WireGuard\wireguard.exe" /installtunnelservice $clientConfPathFinal
 
     Write-Host "WireGuard-Setup abgeschlossen und der Wireguard Tunnel ist nun aktiviert!" -ForegroundColor Green
-    Write-Host "HINWEIS: Bitte beachten Sie, dass gegebenenfalls der WireGuard-UDP-Port 51820 sowie die TCP-Ports 31400 bis 31409 für die PI Network Nodes im Kundeninterface Ihres Serveranbieters freigegeben sein müssen bzw. bereits eingetragen sind!" -ForegroundColor RED
+    Write-Host "HINWEIS: Bitte beachten Sie, dass gegebenenfalls der WireGuard-UDP-Port 51820 sowie die TCP-Ports 31400 bis 31409 fÃ¼r die PI Network Nodes im Kundeninterface Ihres Serveranbieters freigegeben sein mÃ¼ssen bzw. bereits eingetragen sind!" -ForegroundColor RED
 
     Pause
 }
 
-# --- Menü ---
+# --- MenÃ¼ ---
 function Show-Menu {
     Clear-Host
     Refresh-InstallationStatus
@@ -531,13 +519,13 @@ while ($true) {
         '9' { DownloadAndStartPiCheck }
         '10'  {
           Write-Host ' ' -ForegroundColor Green            
-Write-Host 'Die Schritte 1 bis 5 unterstützen Sie bei der grundlegenden Einrichtung eines Pi Network Nodes.' -ForegroundColor Green
+Write-Host 'Die Schritte 1 bis 5 unterstÃ¼tzen Sie bei der grundlegenden Einrichtung eines Pi Network Nodes.' -ForegroundColor Green
 Write-Host 'Die Schritte 6 bis 8 helfen Ihnen dabei, einen WireGuard-Server unter Linux automatisch zu installieren und zu konfigurieren,' -ForegroundColor Green
-Write-Host 'damit Ihr Pi Network Node über eine öffentliche IPv4-Adresse erreichbar ist und eingehende Verbindungen empfangen kann.' -ForegroundColor Green
-Write-Host 'Schritt 9 lädt die aktuellste Version der PiCheck-Software herunter, entpackt sie und startet das Programm.' -ForegroundColor Green
-Write-Host 'PiCheck ist ein nützliches Analysetool für alle Pi-Network-Node-Betreiber.' -ForegroundColor Green
+Write-Host 'damit Ihr Pi Network Node Ã¼ber eine Ã¶ffentliche IPv4-Adresse erreichbar ist und eingehende Verbindungen empfangen kann.' -ForegroundColor Green
+Write-Host 'Schritt 9 lÃ¤dt die aktuellste Version der PiCheck-Software herunter, entpackt sie und startet das Programm.' -ForegroundColor Green
+Write-Host 'PiCheck ist ein nÃ¼tzliches Analysetool fÃ¼r alle Pi-Network-Node-Betreiber.' -ForegroundColor Green
 Write-Host ' ' 
-Write-Host 'Wenn Sie Unterstützung benötigen, erreichen Sie uns über folgenden Link in unserer Telegram Gruppe:' -ForegroundColor Green
+Write-Host 'Wenn Sie UnterstÃ¼tzung benÃ¶tigen, erreichen Sie uns Ã¼ber folgenden Link in unserer Telegram Gruppe:' -ForegroundColor Green
 Write-Host ' '
 Write-Host 'Telegram: https://t.me/PiNetzwerkDeutschland' -ForegroundColor Yellow
 Write-Host ' ' 
@@ -548,6 +536,6 @@ Write-Host ' '
     Stop-Process -Id $PID
 }
 
-        default { Write-Warning 'Ungültige Auswahl'; Pause }
+        default { Write-Warning 'UngÃ¼ltige Auswahl'; Pause }
     }
 }
