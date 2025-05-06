@@ -137,7 +137,7 @@ function Do-WindowsUpdates {
 function Do-EnableWSL2 {
     $flagPath = "$env:ProgramData\wsl2_setup_flag.txt"
     $scriptPath = $MyInvocation.MyCommand.Definition
-    $autostartScriptPath = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup\ResumeWSL2Setup.ps1"
+    $autostartBatPath = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup\ResumeWSL2Setup.bat"
 
     if (Test-Path $flagPath) {
         Write-Host "`n Fortsetzungs-Flag erkannt – Setup wird fortgesetzt..." -ForegroundColor Cyan
@@ -151,8 +151,8 @@ function Do-EnableWSL2 {
 
         # Aufräumen
         Remove-Item $flagPath -Force -ErrorAction SilentlyContinue
-        Remove-Item $autostartScriptPath -Force -ErrorAction SilentlyContinue
-        pause
+        Remove-Item $autostartBatPath -Force -ErrorAction SilentlyContinue
+        Pause
         return
     }
 
@@ -163,7 +163,7 @@ function Do-EnableWSL2 {
 
     if ($wslEnabled -and $vmEnabled) {
         Write-Host "WSL2 ist bereits vollständig aktiviert." -ForegroundColor Green
-        pause
+        Pause
         return
     }
 
@@ -173,10 +173,11 @@ function Do-EnableWSL2 {
 
     Set-Content -Path $flagPath -Value "resume"
 
-    Copy-Item $scriptPath $autostartScriptPath -Force
+    $batContent = "@echo off`r`npowershell.exe -ExecutionPolicy Bypass -File `"$scriptPath`""
+    Set-Content -Path $autostartBatPath -Value $batContent -Encoding ASCII
 
     Write-Host "`nSystem wird neu gestartet – Setup wird beim nächsten Login automatisch fortgesetzt." -ForegroundColor Yellow
-    pause
+    Pause
     Restart-Computer -Force
 }
 
@@ -571,7 +572,7 @@ PersistentKeepalive = 25
     & "$env:ProgramFiles\WireGuard\wireguard.exe" /installtunnelservice $clientConfPathFinal
 
     Write-Host "WireGuard-Setup abgeschlossen und der Wireguard Tunnel ist nun aktiviert!" -ForegroundColor Green
-    Write-Host "HINWEIS: Bitte beachten Sie, dass gegebenenfalls der WireGuard-UDP-Port 51820 sowie die TCP-Ports 31400 bis 31409 für die PI Network Nodes im Kundeninterface Ihres Serveranbieters freigegeben sein müssen bzw. bereits eingetragen sind!" -ForegroundColor RED
+    Write-Host "HINWEIS: Bitte beachten Sie, dass gegebenenfalls der WireGuard-UDP-Port 51820 sowie die TCP-Ports 31400 bis 31409 für den PI Network Nodes im Kundeninterface Ihres Serveranbieters freigegeben sein müssen bzw. bereits eingetragen sind!" -ForegroundColor RED
 
     Pause
 }
@@ -642,7 +643,7 @@ function Show-Menu {
         Write-Host "7) WireGuard Windows Client installieren" -ForegroundColor Yellow
     }
 
-    Write-Host '8) Automastisch WireGuard Server einrichten & Client verbinden' -ForegroundColor Yellow
+    Write-Host '8) Automatisch WireGuard Server einrichten & Client verbinden' -ForegroundColor Yellow
 
     # === Gruppe 9: Analyse-Tool ===
     Write-Host '9) PiCheck herunterladen, entpacken und starten' -ForegroundColor White
