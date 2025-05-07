@@ -73,4 +73,4 @@ Bei Fragen oder Anregungen:
 
 ---
 
-© 2025 – Fingerkrampf / PiNetzwerkDeutschland.de
+2025 – by Fingerkrampf / PiNetzwerkDeutschland.de
