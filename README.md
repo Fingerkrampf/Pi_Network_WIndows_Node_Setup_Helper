@@ -10,10 +10,7 @@ Dieses Projekt enthält ein PowerShell-Skript, das den **vollautomatisierten Dow
 - Automatische Statusanzeige (Installiert / Aktiviert / Konfiguriert)
 - Installation aller benötigten Tools (WSL2, Docker, WireGuard, PuTTY, Pi Node)
 - Einrichtung & Aktivierung eines WireGuard-Tunnels (Client & Linux-Server automatisiert)
-- Logging aller Aktionen und Fehler in `pi_node_setup_log.txt`
 - Unterstützung für Passwort- & SSH-Key-basierte Authentifizierung
-- Rückgängig-Funktionen (Deinstallationen, Cleanup)
-- Anzeige aktiver WireGuard-Verbindung im Menü
 - Unterstützung für PowerShell 5.x (kein PowerShell Core erforderlich)
 
 ---
