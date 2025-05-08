@@ -20,7 +20,7 @@ Dieses Projekt enthält ein PowerShell-Skript, das den **vollautomatisierten Dow
 
 ## 🧰 Voraussetzungen
 
-- Windows 10 / 11 oder Windows Server mit **PowerShell 5.x**
+- Windows 10 / 11 mit **PowerShell 5.x**
 - **Administratorrechte**
 - **Ein gemieteter vServer** (Root-Zugang, Ubuntu/Debian-basiert, öffentliche IPv4)
 - **SSH-Key oder Root-Passwort**
